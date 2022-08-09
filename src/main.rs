@@ -1,14 +1,22 @@
+use std::collections::{HashSet, VecDeque};
+
 use petgraph::{graphmap::DiGraphMap, Direction::Incoming};
 use regex::Regex;
 
+#[derive(Debug)]
+struct Worker {
+    chr: char,
+    seconds_left: u32,
+}
+
 fn main() {
-    let input = include_str!("./data/input_example.txt");
+    let input = include_str!("./data/input.txt");
     let graph = parse_input(input);
 
     let order = run_search(&graph);
     println!("Order: {:?}", order.iter().collect::<String>());
 
-    let time_search = run_timed_search(&graph);
+    let time_search = run_timed_search(&graph, 5, 61);
     println!("Timed search: {:?}", time_search);
 }
 
@@ -65,28 +73,49 @@ fn run_search(graph: &DiGraphMap<char, ()>) -> Vec<char> {
     order
 }
 
-fn run_timed_search(graph: &DiGraphMap<char, ()>) -> u32 {
+fn run_timed_search(graph: &DiGraphMap<char, ()>, max_workers: usize, min_time: u32) -> u32 {
     let mut time: u32 = 0;
+    let mut workers: Vec<Worker> = vec![];
 
     let mut graph = graph.clone();
-    while graph.node_count() > 0 {
+    while graph.node_count() > 0 || workers.len() > 0 {
+        time += 1;
+
+        // The whole function is so bad...
+
+        for worker in &mut workers {
+            if worker.seconds_left == 1 {
+                graph.remove_node(worker.chr);
+            }
+        }
+
+        workers = workers
+            .into_iter()
+            .filter(|worker| worker.seconds_left != 1)
+            .collect::<Vec<_>>();
+
+        for worker in &mut workers {
+            worker.seconds_left -= 1;
+        }
+
         let mut no_incoming_nodes = graph
             .nodes()
             .filter(|edge| graph.neighbors_directed(*edge, Incoming).next().is_none())
+            .filter(|edge| workers.iter().find(|worker| worker.chr == *edge).is_none())
             .collect::<Vec<_>>();
         no_incoming_nodes.sort();
+        let mut no_incoming_nodes = no_incoming_nodes.iter().collect::<VecDeque<_>>();
 
-        let min_node = no_incoming_nodes
-            .iter()
-            .take(2)
-            .min()
-            .expect("Can't find minimum node");
-
-        let time_add = *min_node as u32 - 'A' as u32 + 1;
-        println!("{} - {}", min_node, time_add);
-        time += time_add;
-
-        graph.remove_node(*min_node);
+        while workers.len() < max_workers && no_incoming_nodes.len() > 0 {
+            let node_to_process = *no_incoming_nodes
+                .pop_front()
+                .expect("Failed to get next node");
+            let time_to_process = node_to_process as u32 - 'A' as u32 + min_time;
+            workers.push(Worker {
+                chr: node_to_process,
+                seconds_left: time_to_process,
+            });
+        }
     }
 
     time
